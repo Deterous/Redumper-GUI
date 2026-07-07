@@ -1,0 +1,30 @@
+[package]
+name = "redumper-gui"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+dirs = "6"
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "persistence", "wayland", "x11"] }
+fs2 = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+open = "5"
+rfd = "0.17"
+serde = { version = "1", features = ["derive"] }
+time = "0.3"
+winit = "0.30.13"
+zip = { version = "8", default-features = false, features = ["deflate", "time"] }
+zstd = "0.13"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[build-dependencies]
+embed-resource = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

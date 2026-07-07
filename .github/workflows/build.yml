@@ -1,0 +1,186 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REDUMPER_VERSION: b729
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+            output_os: Windows
+            arch: x64
+          # Windows arm64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            platform: windows
+            output_os: Windows
+            arch: arm64
+          # Windows x86
+          - os: windows-latest
+            target: i686-pc-windows-msvc
+            platform: windows
+            output_os: Windows
+            arch: x86
+          # Linux x64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            output_os: Linux
+            arch: x64
+          # Linux arm64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            output_os: Linux
+            arch: arm64
+          # macOS x64
+          - os: macos-26-intel
+            target: x86_64-apple-darwin
+            platform: macos
+            output_os: macOS
+            arch: x64
+          # macOS arm64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos
+            output_os: macOS
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Bundle
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          mkdir -p bundle
+          curl -L -o redumper.zip "https://github.com/superg/redumper/releases/download/${{ env.REDUMPER_VERSION }}/redumper-${{ env.REDUMPER_VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          unzip redumper.zip -d redumper_tmp/
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp redumper_tmp/redumper-${{ env.REDUMPER_VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}/bin/redumper.exe bundle/
+            cp target/${{ matrix.target }}/release/redumper-gui.exe bundle/
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            contents="bundle/Redumper GUI.app/Contents"
+            mkdir -p "$contents/MacOS" "$contents/lib" "$contents/Resources"
+            cp assets/icon/icon.icns "$contents/Resources/"
+            cp Info.plist "$contents/"
+            cp target/${{ matrix.target }}/release/redumper-gui "$contents/MacOS/"
+            cp redumper_tmp/redumper-${{ env.REDUMPER_VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}/bin/redumper "$contents/MacOS/"
+            cp -R redumper_tmp/redumper-${{ env.REDUMPER_VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}/lib/* "$contents/lib/"
+            chmod +x "$contents/MacOS/redumper-gui" "$contents/MacOS/redumper"
+            codesign --force --deep --sign - "bundle/Redumper GUI.app"
+            mkdir -p dmg_contents
+            mv "bundle/Redumper GUI.app" dmg_contents/
+            ln -s /Applications dmg_contents/Applications
+            hdiutil create -volname "Redumper GUI" -srcfolder dmg_contents -ov -format UDZO bundle/"Redumper-GUI-${{ matrix.output_os }}-${{ matrix.arch }}.dmg"
+            rm -rf dmg_contents
+          else
+            cp redumper_tmp/redumper-${{ env.REDUMPER_VERSION }}-${{ matrix.platform }}-${{ matrix.arch }}/bin/redumper bundle/
+            cp target/${{ matrix.target }}/release/redumper-gui bundle/
+            chmod +x bundle/redumper bundle/redumper-gui
+          fi
+
+      - name: Upload artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Redumper-GUI-${{ matrix.output_os }}-${{ matrix.arch }}
+          path: bundle/
+
+  release:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Get version
+        id: version
+        run: echo "version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*\"\(.*\)\"/\1/' |  tr -d '\r\n')" >> $GITHUB_OUTPUT
+
+      - name: Check if release already exists
+        id: check_release
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" &>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download all artifacts
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts/
+
+      - name: Create release archives
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          mkdir -p release
+          cd artifacts
+          for dir in */; do
+            name="${dir%/}"
+            if [[ "$name" == *"Linux"* ]]; then
+              chmod +x "$name"/redumper "$name"/redumper-gui
+              tar -czf "../release/${name}.tar.gz" -C "$name" .
+            elif [[ "$name" == *"macOS"* ]]; then
+              (cd "$name" && cp ./*.dmg "../../release/${name}.dmg")
+            else
+              (cd "$name" && zip -r "../../release/${name}.zip" .)
+            fi
+          done
+          if [ -z "$(ls ../release/* 2>/dev/null)" ]; then
+            echo "No artifacts to release"
+            exit 1
+          fi
+
+      - name: Create release
+        if: steps.check_release.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Redumper GUI v${{ steps.version.outputs.version }}
+          body: |
+            **[Download for Windows (64bit)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/Redumper-GUI-Windows-x64.zip)**
+
+            **[Download for Linux (64bit)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/Redumper-GUI-Linux-x64.tar.gz)**
+
+            **[Download for macOS (Apple Silicon)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/Redumper-GUI-macOS-arm64.dmg)**
+
+            For other systems, see the downloads below.
+          files: release/*
+          make_latest: true
