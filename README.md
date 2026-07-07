@@ -2,6 +2,8 @@
 
 A cross-platform digital fidget spinner and GUI for [redumper](https://github.com/superg/redumper).
 
+<img width="1506" height="894" alt="tutorial" src="https://github.com/user-attachments/assets/59947cca-3d63-4b79-9282-861a2061d7a4" />
+
 ## Installation
 
 Download the latest version for your OS from the [Releases](../../releases/latest) page.
