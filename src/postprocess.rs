@@ -1,14 +1,121 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use eframe::egui;
 
+use crate::dump::DiscProfile;
+
 const ZSTD_EXTENSIONS: &[&str] = &["state", "skeleton", "subcode"];
 const KEEP_EXTENSIONS: &[&str] = &["bin", "cue", "iso"];
+const MPF_CHECK_TIMEOUT: Duration = Duration::from_secs(600); // 10min timeout for MPF scanning
+
+// Run MPF.Check if available and iso/cue exists
+fn run_mpf(
+    ctx: &egui::Context,
+    log: &Arc<Mutex<String>>,
+    dir: &Path,
+    image_name: &str,
+    drive: Option<&str>,
+    profile: Option<DiscProfile>,
+) {
+    // Locate MPF.Check
+    let name = if cfg!(windows) { "MPF.Check.exe" } else { "MPF.Check" };
+    let Some(mpf_path) =
+        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).filter(|p| p.exists())
+    else {
+        return;
+    };
+
+    // Find successful dump
+    let input_file = if dir.join(format!("{}.iso", image_name)).exists() {
+        format!("{}.iso", image_name)
+    } else if dir.join(format!("{}.cue", image_name)).exists() {
+        format!("{}.cue", image_name)
+    } else {
+        // Don't run Check if the dump is incomplete
+        return;
+    };
+
+    // Determine system string from disc profile
+    let system = match profile {
+        Some(DiscProfile::CD) => "AUDIO-CD",
+        Some(DiscProfile::DVD) => "DVD-VIDEO",
+        Some(DiscProfile::BD) => "BD-VIDEO",
+        Some(DiscProfile::HDDVD) => "HDDVD-VIDEO",
+        Some(DiscProfile::XBOX) => "XBOX",
+        Some(DiscProfile::XBOX360) => "XBOX360",
+        Some(DiscProfile::GC) => "GC",
+        Some(DiscProfile::WII) => "WII",
+        None => "PC",
+    };
+
+    // "MPF.Check SYSTEM -u redumper [-p DRIVE -s] input_file"
+    let mut args = vec![system.to_string(), "-u".to_string(), "redumper".to_string()];
+    if let Some(d) = drive {
+        args.push("-p".to_string());
+        args.push(d.to_string());
+        args.push("-s".to_string());
+    }
+    args.push(input_file);
+
+    log.lock().unwrap().push_str(&format!("  Running MPF.Check {}\n", args.join(" ")));
+    ctx.request_repaint();
+
+    let mut cmd = Command::new(&mpf_path);
+    cmd.current_dir(dir)
+        .args(&args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let start = std::time::Instant::now();
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        log.lock()
+                            .unwrap()
+                            .push_str(&format!("  MPF.Check exited with code {}\n", status.code().unwrap_or(-1)));
+                        break;
+                    }
+                    Ok(None) if start.elapsed() >= MPF_CHECK_TIMEOUT => {
+                        child.kill().ok();
+                        child.wait().ok();
+                        log.lock().unwrap().push_str("  MPF.Check timed out, killed\n");
+                        break;
+                    }
+                    _ => std::thread::sleep(Duration::from_millis(100)),
+                }
+            }
+        }
+        Err(e) => {
+            log.lock().unwrap().push_str(&format!("  Failed to run MPF.Check: {}\n", e));
+        }
+    }
+    ctx.request_repaint();
+}
 
 // Redumper post-process files
-pub fn run(dir: &Path, image_name: &str, log: &Arc<Mutex<String>>, ctx: &egui::Context) {
+pub fn run(
+    ctx: &egui::Context,
+    log: &Arc<Mutex<String>>,
+    dir: &Path,
+    image_name: &str,
+    drive: Option<&str>,
+    profile: Option<DiscProfile>,
+) {
+    // Run MPF.Check first (if available)
+    run_mpf(ctx, log, dir, image_name, drive, profile);
+
     // Collect all files in directory that belong to this dump
     let files: Vec<(String, PathBuf)> = fs::read_dir(dir)
         .into_iter()

@@ -502,6 +502,7 @@ pub fn run_redumper(
     output_path: Option<PathBuf>,
     work_dir: PathBuf,
     cleanup: bool,
+    drive: Option<String>,
     state: DumpState,
     ctx: egui::Context,
 ) {
@@ -571,7 +572,8 @@ pub fn run_redumper(
                     && let Some(parent) = path.parent()
                 {
                     let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-                    postprocess::run(parent, &stem, &state.log, &ctx);
+                    let profile = *state.disc_profile.lock().unwrap();
+                    postprocess::run(&ctx, &state.log, parent, &stem, drive.as_deref(), profile);
                 } else {
                     state.log.lock().unwrap().push_str(&format!("\n[Redumper exited with code {}]\n", code));
                 }

@@ -224,11 +224,17 @@ impl App {
                                 self.dump_just_finished = false;
                                 self.show_options = false;
                                 self.action_pending = true;
+                                let drive = if self.auto_eject {
+                                    None
+                                } else {
+                                    self.drives.get(self.selected_drive).map(|d| d.0.clone())
+                                };
                                 dump::run_redumper(
                                     self.build_args(false),
                                     Some(self.output_path()),
                                     self.effective_output_dir(),
                                     self.cleanup,
+                                    drive, // Used for post-process only
                                     self.dump.clone(),
                                     ui.ctx().clone(),
                                 );
@@ -289,11 +295,17 @@ impl App {
                             self.dump_just_finished = false;
                             self.show_options = false;
                             self.action_pending = true;
+                            let drive = if self.auto_eject {
+                                None
+                            } else {
+                                self.drives.get(self.selected_drive).map(|d| d.0.clone())
+                            };
                             dump::run_redumper(
                                 self.build_args(true),
                                 Some(self.output_path()),
                                 self.effective_output_dir(),
                                 self.cleanup,
+                                drive, // Used for post-process only
                                 self.dump.clone(),
                                 ui.ctx().clone(),
                             );
