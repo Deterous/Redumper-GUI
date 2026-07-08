@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
@@ -9,46 +9,85 @@ const KEEP_EXTENSIONS: &[&str] = &["bin", "cue", "iso"];
 
 // Redumper post-process files
 pub fn run(dir: &Path, image_name: &str, log: &Arc<Mutex<String>>, ctx: &egui::Context) {
-    // Delete temp files
-    let mut delete = vec!["cache"];
-    if dir.join(format!("{}.cue", image_name)).exists() {
-        delete.push("scram");
-    }
-    if dir.join(format!("{}.iso", image_name)).exists() {
-        delete.push("sdram");
-        delete.push("sbram");
-    }
+    // Collect all files in directory that belong to this dump
+    let files: Vec<(String, PathBuf)> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .map(|e| (e.file_name().to_string_lossy().to_string(), e.path()))
+        .filter(|(name, _)| name.starts_with(image_name))
+        .collect();
 
-    for ext in delete {
-        let file = dir.join(format!("{}.{}", image_name, ext));
-        if file.exists() {
-            match fs::remove_file(&file) {
-                Ok(_) => log
-                    .lock()
-                    .unwrap()
-                    .push_str(&format!("  Deleted: {}\n", file.file_name().unwrap().to_string_lossy())),
-                Err(e) => log.lock().unwrap().push_str(&format!(
-                    "  Failed to delete {}: {}\n",
-                    file.file_name().unwrap().to_string_lossy(),
-                    e
-                )),
+    // Get all files with given suffix
+    let find = |suffix: &str| {
+        let full = format!("{}{}", image_name, suffix);
+        files.iter().find(|(name, _)| *name == full).map(|(_, p)| p.as_path())
+    };
+
+    // Delete temp files
+    let mut delete = vec![".cache"];
+    if find(".cue").is_some() {
+        // Delete scram if cue exists
+        delete.push(".scram");
+    }
+    if find(".iso").is_some() {
+        // Delete sdram/sbram if iso exists
+        delete.push(".sdram");
+        delete.push(".sbram");
+    }
+    for suffix in delete {
+        if let Some(path) = find(suffix) {
+            let name = format!("{}{}", image_name, suffix);
+            match fs::remove_file(path) {
+                Ok(_) => log.lock().unwrap().push_str(&format!("  Deleted: {}\n", name)),
+                Err(e) => log.lock().unwrap().push_str(&format!("  Failed to delete {}: {}\n", name, e)),
             }
         }
     }
 
     // Zstd-compress state/skeleton/subcode
     for ext in ZSTD_EXTENSIONS {
-        let file = dir.join(format!("{}.{}", image_name, ext));
-        if file.exists() {
+        let suffix = format!(".{}", ext);
+        if let Some(path) = find(&suffix) {
             let out_path = dir.join(format!("{}.{}.zst", image_name, ext));
-            match zstd_compress(&file, &out_path) {
+            match zstd_compress(path, &out_path) {
                 Ok(_) => {
-                    fs::remove_file(&file).ok();
+                    // Delete successfully compressed files
+                    fs::remove_file(path).ok();
                     log.lock().unwrap().push_str(&format!("  Compressed: {}.{} -> .{}.zst\n", image_name, ext, ext));
                 }
                 Err(e) => {
                     log.lock().unwrap().push_str(&format!("  Failed to compress {}.{}: {}\n", image_name, ext, e));
                 }
+            }
+        }
+    }
+
+    // Zstd-compress small spillover tracks
+    for (name, path) in &files {
+        if !name.ends_with(").bin") {
+            continue;
+        }
+        // Extract track number
+        let track = match name.rfind("(Track ").and_then(|i| name[i + 7..].strip_suffix(").bin")) {
+            Some(t) => t,
+            None => continue,
+        };
+        // Get spillover tracks
+        let is_spillover = matches!(track, "0" | "00" | "A" | "AA")
+            || track.starts_with("0.")
+            || track.starts_with("A.")
+            || track.starts_with("00.")
+            || track.starts_with("AA.");
+        if !is_spillover {
+            continue;
+        }
+        if let Ok(meta) = fs::metadata(path) {
+            // Skip large spillover track (>150 sectors)
+            if meta.len() <= 352800 {
+                let out_path = dir.join(format!("{}.zst", name));
+                zstd_compress(path, &out_path).ok();
             }
         }
     }
