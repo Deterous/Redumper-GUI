@@ -28,7 +28,7 @@ tar -xzf Redumper-GUI-Linux-x64.tar.gz -C ~/Redumper-GUI
 
 ### macOS
 
-Open the dmg file in Finder, and move `Redumper GUI.app` to the Applications folder. After attempting to open the .app, macOS will warn you it could not verify the app as it is self-signed, you will have to go to "Privacy & Security" settings where it will say "Redumper GUI" was blocked to protect your Mac, then click 'Open Anyway'.
+Open the dmg file in Finder, and move `Redumper GUI.app` to the Applications folder. After attempting to open the .app, macOS will warn you it could not verify the app as it is self-signed, go to the bottom of the "Privacy & Security" settings page where it says "Redumper GUI" was blocked to protect your Mac, then click 'Open Anyway' and try again.
 
 Alternatively you can first clear the protection setting in terminal with:
 

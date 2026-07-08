@@ -14,6 +14,13 @@ struct BounceDisc {
     pub radius: f32,
 }
 
+struct LogoBounce {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+}
+
 #[derive(Default)]
 pub(crate) struct DiscState {
     pub(super) velocity: f64,
@@ -38,6 +45,7 @@ pub(crate) struct DiscState {
     right_drag_start_scale: f32,
     pub(super) win_triggered: bool,
     win_animation: Option<(f64, Vec<BounceDisc>)>,
+    logo_bounce: Option<LogoBounce>,
 }
 
 impl App {
@@ -71,8 +79,8 @@ impl App {
         Some(ctx.load_texture(name, egui::ColorImage::new([w, h], pixels), egui::TextureOptions::LINEAR))
     }
 
-    // Paint the disc profile image
-    fn paint_profile_logo(&mut self, ctx: &egui::Context, painter: &egui::Painter, area: egui::Rect, t: &ColorTheme) {
+    // Paint the disc profile image (with logo bounce on click)
+    fn paint_profile_logo(&mut self, ui: &egui::Ui, ctx: &egui::Context, area: egui::Rect, t: &ColorTheme) {
         let profile = match *self.dump.disc_profile.lock().unwrap() {
             Some(p) => p,
             None => return,
@@ -86,12 +94,51 @@ impl App {
         };
         let logo_h = 24.0 as f32;
         let logo_w = logo_h * tex.size()[0] as f32 / tex.size()[1] as f32;
-        let rect = egui::Rect::from_min_size(
-            egui::pos2(area.right() - logo_w - 8.0, area.top() + 8.0),
-            egui::vec2(logo_w, logo_h),
-        );
+
+        // Compute logo position
+        let (lx, ly) = if let Some(ref mut b) = self.disc.logo_bounce {
+            let dt = ctx.input(|i| i.stable_dt);
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            // Bounce off area edges
+            if b.x < area.left() {
+                b.x = area.left();
+                b.vx = b.vx.abs();
+            }
+            if b.x + logo_w > area.right() {
+                b.x = area.right() - logo_w;
+                b.vx = -b.vx.abs();
+            }
+            if b.y < area.top() {
+                b.y = area.top();
+                b.vy = b.vy.abs();
+            }
+            if b.y + logo_h > area.bottom() {
+                b.y = area.bottom() - logo_h;
+                b.vy = -b.vy.abs();
+            }
+            ctx.request_repaint();
+            (b.x, b.y)
+        } else {
+            // Default to top right
+            (area.right() - logo_w - 8.0, area.top() + 8.0)
+        };
+
+        let rect = egui::Rect::from_min_size(egui::pos2(lx, ly), egui::vec2(logo_w, logo_h));
+        let resp = ui.interact(rect, ui.id().with("profile_logo_bounce"), egui::Sense::click());
+        if resp.clicked() {
+            // Start/stop logo bounce
+            if self.disc.logo_bounce.is_some() {
+                self.disc.logo_bounce = None;
+            } else {
+                let default_x = area.right() - logo_w - 8.0;
+                let default_y = area.top() + 8.0;
+                self.disc.logo_bounce = Some(LogoBounce { x: default_x, y: default_y, vx: 120.0, vy: 80.0 });
+            }
+        }
+
         let tint = t.accent;
-        painter.image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), tint);
+        ui.painter().image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), tint);
     }
 
     // Update box_colors from current sector states
@@ -1083,7 +1130,7 @@ impl App {
 
                     // Profile logo at top-right of disc area
                     if show_disc && available.width() >= 600.0 {
-                        self.paint_profile_logo(&ctx, ui.painter(), disc_rect, t);
+                        self.paint_profile_logo(ui, &ctx, disc_rect, t);
                     }
                 }
             });
