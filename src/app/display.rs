@@ -34,6 +34,8 @@ pub(crate) struct DiscState {
     hold_start: Option<f64>,
     flip_state: Option<(f64, bool)>,
     pub(super) profile_texture: Option<(DiscProfile, egui::TextureHandle)>,
+    label_texture: Option<(DiscProfile, egui::TextureHandle)>,
+    pub(super) show_label_side: bool,
     prev_error_count: usize,
     click_times: Vec<f64>,
     coin_flips: String,
@@ -62,7 +64,30 @@ impl App {
 
     // Load the disc profile image
     fn load_profile_texture(ctx: &egui::Context, profile: DiscProfile) -> Option<egui::TextureHandle> {
-        let (name, data) = match profile {
+        let (name, data) = Self::profile_image_data(profile);
+        let img = image::load_from_memory(data).ok()?.to_rgba8();
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        let pixels: Vec<egui::Color32> =
+            img.chunks_exact(4).map(|c| egui::Color32::from_rgba_unmultiplied(255, 255, 255, c[3])).collect();
+        Some(ctx.load_texture(name, egui::ColorImage::new([w, h], pixels), egui::TextureOptions::LINEAR))
+    }
+
+    // Load the disc label image
+    fn load_label_texture(ctx: &egui::Context, profile: DiscProfile) -> Option<egui::TextureHandle> {
+        let (name, data) = Self::label_image_data(profile);
+        let img = image::load_from_memory(data).ok()?.to_rgba8();
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        let pixels: Vec<egui::Color32> =
+            img.chunks_exact(4).map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])).collect();
+        Some(ctx.load_texture(
+            &format!("{}_disc", name),
+            egui::ColorImage::new([w, h], pixels),
+            egui::TextureOptions::LINEAR,
+        ))
+    }
+
+    fn profile_image_data(profile: DiscProfile) -> (&'static str, &'static [u8]) {
+        match profile {
             DiscProfile::CD => ("CD", include_bytes!("../../assets/profile/CD.png").as_slice()),
             DiscProfile::DVD => ("DVD", include_bytes!("../../assets/profile/DVD.png").as_slice()),
             DiscProfile::BD => ("BD", include_bytes!("../../assets/profile/BD.png").as_slice()),
@@ -71,12 +96,22 @@ impl App {
             DiscProfile::XBOX360 => ("XBOX360", include_bytes!("../../assets/profile/XBOX360.png").as_slice()),
             DiscProfile::GC => ("GC", include_bytes!("../../assets/profile/GC.png").as_slice()),
             DiscProfile::WII => ("WII", include_bytes!("../../assets/profile/WII.png").as_slice()),
-        };
-        let img = image::load_from_memory(data).ok()?.to_rgba8();
-        let (w, h) = (img.width() as usize, img.height() as usize);
-        let pixels: Vec<egui::Color32> =
-            img.chunks_exact(4).map(|c| egui::Color32::from_rgba_unmultiplied(255, 255, 255, c[3])).collect();
-        Some(ctx.load_texture(name, egui::ColorImage::new([w, h], pixels), egui::TextureOptions::LINEAR))
+            // _ => ("CD", include_bytes!("../../assets/profile/CD.png").as_slice()),
+        }
+    }
+
+    fn label_image_data(profile: DiscProfile) -> (&'static str, &'static [u8]) {
+        match profile {
+            DiscProfile::CD => ("CD", include_bytes!("../../assets/profile/CD_disc.png").as_slice()),
+            DiscProfile::DVD => ("DVD", include_bytes!("../../assets/profile/DVD_disc.png").as_slice()),
+            DiscProfile::BD => ("BD", include_bytes!("../../assets/profile/BD_disc.png").as_slice()),
+            DiscProfile::HDDVD => ("HDDVD", include_bytes!("../../assets/profile/HDDVD_disc.png").as_slice()),
+            DiscProfile::XBOX => ("XBOX", include_bytes!("../../assets/profile/XBOX_disc.png").as_slice()),
+            DiscProfile::XBOX360 => ("XBOX360", include_bytes!("../../assets/profile/XBOX360_disc.png").as_slice()),
+            DiscProfile::GC => ("GC", include_bytes!("../../assets/profile/GC_disc.png").as_slice()),
+            DiscProfile::WII => ("WII", include_bytes!("../../assets/profile/WII_disc.png").as_slice()),
+            // _ => ("CD", include_bytes!("../../assets/profile/CD_disc.png").as_slice()),
+        }
     }
 
     // Paint the disc profile image (with logo bounce on click)
@@ -87,6 +122,9 @@ impl App {
         };
         if self.disc.profile_texture.as_ref().map(|(p, _)| *p) != Some(profile) {
             self.disc.profile_texture = Self::load_profile_texture(ctx, profile).map(|t| (profile, t));
+        }
+        if self.disc.label_texture.as_ref().map(|(p, _)| *p) != Some(profile) {
+            self.disc.label_texture = Self::load_label_texture(ctx, profile).map(|t| (profile, t));
         }
         let tex = match &self.disc.profile_texture {
             Some((_, t)) => t,
@@ -126,14 +164,19 @@ impl App {
 
         let rect = egui::Rect::from_min_size(egui::pos2(lx, ly), egui::vec2(logo_w, logo_h));
         let resp = ui.interact(rect, ui.id().with("profile_logo_bounce"), egui::Sense::click());
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
         if resp.clicked() {
             // Start/stop logo bounce
             if self.disc.logo_bounce.is_some() {
                 self.disc.logo_bounce = None;
+                self.disc.show_label_side = false;
             } else {
                 let default_x = area.right() - logo_w - 8.0;
                 let default_y = area.top() + 8.0;
                 self.disc.logo_bounce = Some(LogoBounce { x: default_x, y: default_y, vx: 120.0, vy: 80.0 });
+                self.disc.show_label_side = true;
             }
         }
 
@@ -568,7 +611,39 @@ impl App {
         }
 
         let effective_radius = disc_radius * self.disc.radius_scale;
-        Self::paint_disc(ui.painter(), disc_center, effective_radius, self.disc.visual_angle, t);
+        if self.disc.show_label_side {
+            if let Some((_, ref tex)) = self.disc.label_texture {
+                Self::paint_disc_label(ui.painter(), disc_center, effective_radius, self.disc.visual_angle, tex, t);
+            } else {
+                Self::paint_disc(ui.painter(), disc_center, effective_radius, self.disc.visual_angle, t);
+            }
+        } else {
+            Self::paint_disc(ui.painter(), disc_center, effective_radius, self.disc.visual_angle, t);
+        }
+    }
+
+    // Paint the label side of the disc
+    fn paint_disc_label(
+        painter: &egui::Painter,
+        center: egui::Pos2,
+        radius: f32,
+        angle: f32,
+        tex: &egui::TextureHandle,
+        t: &ColorTheme,
+    ) {
+        let (ca, sa) = (angle.cos(), angle.sin());
+        let mut mesh = egui::Mesh::with_texture(tex.id());
+        for &(dx, dy) in &[(-1.0f32, -1.0f32), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let pos = center + egui::vec2(dx * radius, dy * radius);
+            let (ux, uy) = (dx * 0.5, dy * 0.5);
+            let uv = egui::pos2(0.5 + ux * ca + uy * sa, 0.5 - ux * sa + uy * ca);
+            mesh.vertices.push(egui::epaint::Vertex { pos, uv, color: egui::Color32::WHITE });
+        }
+        mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
+        painter.add(egui::Shape::mesh(mesh));
+
+        painter.circle_stroke(center, radius, egui::Stroke::new(1.5, t.border));
+        painter.circle_stroke(center, radius * Self::DISC_SPINDLE_RADIUS, egui::Stroke::new(1.0, t.border));
     }
 
     // Flipping animation
@@ -1130,7 +1205,7 @@ impl App {
 
                     // Profile logo at top-right of disc area
                     if show_disc && available.width() >= 600.0 {
-                        self.paint_profile_logo(ui, &ctx, disc_rect, t);
+                        self.paint_profile_logo(ui, &ctx, available, t);
                     }
                 }
             });
