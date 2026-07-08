@@ -638,7 +638,6 @@ impl App {
         mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
         painter.add(egui::Shape::mesh(mesh));
 
-        painter.circle_stroke(center, radius, egui::Stroke::new(1.5, t.border));
         painter.circle_stroke(center, radius * Self::DISC_SPINDLE_RADIUS, egui::Stroke::new(1.0, t.border));
     }
 

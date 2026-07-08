@@ -4,6 +4,8 @@ A cross-platform digital fidget spinner and GUI for [redumper](https://github.co
 
 <img width="1506" height="894" alt="tutorial" src="https://github.com/user-attachments/assets/59947cca-3d63-4b79-9282-861a2061d7a4" />
 
+Redumper GUI also supports running [MPF](https://github.com/SabreTools/MPF)'s post-processing immediately after a dump, if you have the [MPF.Check](https://github.com/SabreTools/MPF/releases/latest) executable in the same folder. Alternatively if you're submitting to redump, try out the [MPF GUI](https://github.com/SabreTools/MPF/releases/latest) instead!
+
 ## Installation
 
 Download the latest version for your OS from the [Releases](../../releases/latest) page.
