@@ -96,21 +96,17 @@ impl App {
             DiscProfile::XBOX360 => ("XBOX360", include_bytes!("../../assets/profile/XBOX360.png").as_slice()),
             DiscProfile::GC => ("GC", include_bytes!("../../assets/profile/GC.png").as_slice()),
             DiscProfile::WII => ("WII", include_bytes!("../../assets/profile/WII.png").as_slice()),
-            // _ => ("CD", include_bytes!("../../assets/profile/CD.png").as_slice()),
         }
     }
 
     fn label_image_data(profile: DiscProfile) -> (&'static str, &'static [u8]) {
         match profile {
             DiscProfile::CD => ("CD", include_bytes!("../../assets/profile/CD_disc.png").as_slice()),
-            DiscProfile::DVD => ("DVD", include_bytes!("../../assets/profile/DVD_disc.png").as_slice()),
-            DiscProfile::BD => ("BD", include_bytes!("../../assets/profile/BD_disc.png").as_slice()),
-            DiscProfile::HDDVD => ("HDDVD", include_bytes!("../../assets/profile/HDDVD_disc.png").as_slice()),
+            DiscProfile::DVD | DiscProfile::BD | DiscProfile::HDDVD => ("DVD", include_bytes!("../../assets/profile/DVD_disc.png").as_slice()),
             DiscProfile::XBOX => ("XBOX", include_bytes!("../../assets/profile/XBOX_disc.png").as_slice()),
             DiscProfile::XBOX360 => ("XBOX360", include_bytes!("../../assets/profile/XBOX360_disc.png").as_slice()),
             DiscProfile::GC => ("GC", include_bytes!("../../assets/profile/GC_disc.png").as_slice()),
             DiscProfile::WII => ("WII", include_bytes!("../../assets/profile/WII_disc.png").as_slice()),
-            // _ => ("CD", include_bytes!("../../assets/profile/CD_disc.png").as_slice()),
         }
     }
 
