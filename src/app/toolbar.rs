@@ -155,10 +155,19 @@ impl App {
                                     .text_color(t.highlight),
                             );
 
-                            // Limit disc name to 100 characters and disallow illegal characters
+                            // Sanitize disc name
                             if resp.changed() {
-                                self.disc_name
-                                    .retain(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'));
+                                // Disallow illegal characters and control characters
+                                self.disc_name.retain(|c| {
+                                    !c.is_control() && !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+                                });
+
+                                // Disallow dot/whitespace-only names
+                                if self.disc_name.chars().all(|c| c == '.' || c.is_whitespace()) {
+                                    self.disc_name.clear();
+                                }
+
+                                // Limit to 100 characters
                                 if self.disc_name.chars().count() > 100 {
                                     self.disc_name = self.disc_name.chars().take(100).collect();
                                 }
@@ -214,6 +223,20 @@ impl App {
                                 }
                             }
                             if proceed {
+                                // Prevent reserved windows filenames being used
+                                #[cfg(windows)]
+                                {
+                                    const RESERVED: &[&str] = &[
+                                        "CON", "PRN", "AUX", "NUL",
+                                        "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+                                        "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+                                    ];
+                                    let stem = self.disc_name.split('.').next().unwrap_or("").to_uppercase();
+                                    if RESERVED.contains(&stem.as_str()) {
+                                        self.disc_name = format!("_{}", self.disc_name);
+                                    }
+                                }
+
                                 // Call redumper as subprocess with output path as the working directory
                                 if let Ok(mut log) = self.dump.log.lock() {
                                     log.clear();
@@ -288,6 +311,20 @@ impl App {
                         let size = Self::beveled_button_size(refine_label, btn_h, btn_font, btn_pad);
                         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
                         if response.clicked() {
+                            // Prevent reserved windows filenames being used
+                            #[cfg(windows)]
+                            {
+                                const RESERVED: &[&str] = &[
+                                    "CON", "PRN", "AUX", "NUL",
+                                    "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+                                    "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+                                ];
+                                let stem = self.disc_name.split('.').next().unwrap_or("").to_uppercase();
+                                if RESERVED.contains(&stem.as_str()) {
+                                    self.disc_name = format!("_{}", self.disc_name);
+                                }
+                            }
+
                             // Call redumper as subprocess with output path as the working directory
                             if let Ok(mut log) = self.dump.log.lock() {
                                 log.clear();
