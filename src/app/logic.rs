@@ -44,6 +44,7 @@ impl App {
     // Build full redumper command to run
     pub(super) fn build_args(&self, refine: bool) -> Vec<String> {
         let mut args = vec![if refine { "--continue=refine" } else { "disc" }.to_string()];
+        args.push("--auto-detect".to_string());
         if refine {
             args.push("--overwrite".to_string());
         }
