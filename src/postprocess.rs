@@ -21,10 +21,19 @@ fn run_mpf(
     drive: Option<&str>,
     profile: Option<DiscProfile>,
 ) {
-    // Locate MPF.Check
+    // Locate MPF.Check (first exe dir, then PATH)
     let name = if cfg!(windows) { "MPF.Check.exe" } else { "MPF.Check" };
     let Some(mpf_path) =
-        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).filter(|p| p.exists())
+        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).filter(|p| p.exists()).or_else(
+            || {
+                std::env::var_os("PATH").and_then(|paths| {
+                    std::env::split_paths(&paths).find_map(|dir| {
+                        let full = dir.join(name);
+                        full.exists().then_some(full)
+                    })
+                })
+            },
+        )
     else {
         return;
     };
@@ -81,12 +90,7 @@ fn run_mpf(
             let start = std::time::Instant::now();
             loop {
                 match child.try_wait() {
-                    Ok(Some(status)) => {
-                        log.lock()
-                            .unwrap()
-                            .push_str(&format!("  MPF.Check exited with code {}\n", status.code().unwrap_or(-1)));
-                        break;
-                    }
+                    Ok(Some(_)) => break,
                     Ok(None) if start.elapsed() >= MPF_CHECK_TIMEOUT => {
                         child.kill().ok();
                         child.wait().ok();
