@@ -104,6 +104,92 @@ pub fn refine_profile(line: &str, current: DiscProfile) -> Option<DiscProfile> {
     }
 }
 
+// Redump system detected from INFO phase
+#[derive(Clone, Copy, PartialEq)]
+#[allow(clippy::upper_case_acronyms)]
+pub enum System {
+    PSX,
+    PS2,
+    PS3,
+    PS4,
+    PS5,
+    MCD,
+    DC,
+    SS,
+    XBOX,
+    XBOX360,
+    GC,
+    WII,
+    PC,
+    DVDVIDEO,
+    AUDIOCD,
+    BDVIDEO,
+    HDDVDVIDEO,
+}
+
+impl System {
+    // Detect from a log line like "PS2 [filename.iso]:"
+    pub fn from_line(line: &str) -> Option<Self> {
+        let trimmed = line.trim();
+        if !trimmed.ends_with("]:") {
+            return None;
+        }
+        let keyword = trimmed.split_once(" [")?.0;
+        match keyword {
+            "PSX" => Some(Self::PSX),
+            "PS2" => Some(Self::PS2),
+            "PS3" => Some(Self::PS3),
+            "PS4" => Some(Self::PS4),
+            "PS5" => Some(Self::PS5),
+            "MCD" => Some(Self::MCD),
+            "DC" => Some(Self::DC),
+            "SS" => Some(Self::SS),
+            "XBOX" => Some(Self::XBOX),
+            "GC" => Some(Self::GC),
+            "WII" => Some(Self::WII),
+            "SecuROM" => Some(Self::PC),
+            "DVD-VIDEO" => Some(Self::DVDVIDEO),
+            "AUDIO-CD" => Some(Self::AUDIOCD),
+            "BD-VIDEO" => Some(Self::BDVIDEO),
+            "HDDVD-VIDEO" => Some(Self::HDDVDVIDEO),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PSX => "PSX",
+            Self::PS2 => "PS2",
+            Self::PS3 => "PS3",
+            Self::PS4 => "PS4",
+            Self::PS5 => "PS5",
+            Self::MCD => "MCD",
+            Self::DC => "DC",
+            Self::SS => "SS",
+            Self::XBOX => "XBOX",
+            Self::GC => "GC",
+            Self::WII => "WII",
+            Self::XBOX360 => "XBOX360",
+            Self::PC => "PC",
+            Self::DVDVIDEO => "DVD-VIDEO",
+            Self::AUDIOCD => "AUDIO-CD",
+            Self::BDVIDEO => "BD-VIDEO",
+            Self::HDDVDVIDEO => "HDDVD-VIDEO",
+        }
+    }
+
+    // Refine XBOX to XBOX360 from "system: Xbox 360 (XGD...)" line
+    pub fn refine(self, line: &str) -> Self {
+        if self == Self::XBOX {
+            let trimmed = line.trim();
+            if trimmed.starts_with("system:") && trimmed.contains("Xbox 360") {
+                return Self::XBOX360;
+            }
+        }
+        self
+    }
+}
+
 // Parse a disc profile from a log file
 pub fn parse_profile_from_lines(lines: impl Iterator<Item = String>) -> Option<DiscProfile> {
     let mut profile: Option<DiscProfile> = None;
@@ -152,6 +238,7 @@ pub struct DumpState {
     pub total_sectors: Arc<Mutex<usize>>,
     pub hash_progress: Arc<Mutex<Option<u8>>>,
     pub disc_profile: Arc<Mutex<Option<DiscProfile>>>,
+    pub system: Arc<Mutex<Option<System>>>,
     pub script_detected: ScriptDetected,
 }
 
@@ -166,6 +253,7 @@ impl DumpState {
             total_sectors: Arc::new(Mutex::new(0)),
             hash_progress: Arc::new(Mutex::new(None)),
             disc_profile: Arc::new(Mutex::new(None)),
+            system: Arc::new(Mutex::new(None)),
             script_detected,
         }
     }
@@ -182,6 +270,7 @@ impl DumpState {
             *s = 0;
         }
         *self.disc_profile.lock().unwrap() = None;
+        *self.system.lock().unwrap() = None;
     }
 }
 
@@ -193,7 +282,9 @@ struct ProgressTracker {
     started: bool,
     prev_index: usize,
     prev_errors: usize,
+    dump: bool,
     refine: bool,
+    info: bool,
 }
 
 impl ProgressTracker {
@@ -209,7 +300,9 @@ impl ProgressTracker {
             started: false,
             prev_index: 0,
             prev_errors: 0,
+            dump: false,
             refine: false,
+            info: false,
         }
     }
 
@@ -259,11 +352,14 @@ impl ProgressTracker {
         self.prev_index = index;
     }
 
-    // Called when "media errors:" line is seen, mark remainder of dump as read
+    // Called when refine phase starts, mark remainder of dump as read if dump phase ran
     fn finish_dump_phase(&mut self) {
         self.refine = true;
         self.prev_errors = 0;
         self.started = false;
+        if !self.dump {
+            return;
+        }
         let ts = *self.total_sectors.lock().unwrap();
         if ts > 0 {
             let mut states = self.sector_states.lock().unwrap();
@@ -406,16 +502,34 @@ fn stream_log(mut log: impl Read, state: &DumpState, ctx: egui::Context) {
                                 }
                             }
                             // Detect phase changes
-                            if line.trim_start().starts_with("media errors:") {
-                                tracker.finish_dump_phase();
-                            } else if line.trim_start().starts_with("correction statistics:") {
-                                tracker.finish_refine_phase();
-                            } else if line.trim_start().starts_with("*** HASH")
-                                || line.trim_start().starts_with("*** SKELETON")
-                            {
-                                *state.hash_progress.lock().unwrap() = Some(0);
-                            } else if line.trim_start().starts_with("***") {
-                                *state.hash_progress.lock().unwrap() = None;
+                            if line.trim_start().starts_with("***") {
+                                if tracker.refine {
+                                    tracker.finish_refine_phase();
+                                }
+                                if line.trim_start().starts_with("*** DUMP") {
+                                    tracker.dump = true;
+                                } else if line.trim_start().starts_with("*** REFINE") {
+                                    tracker.finish_dump_phase();
+                                } else if line.trim_start().starts_with("*** INFO") {
+                                    tracker.info = true;
+                                } else if line.trim_start().starts_with("*** HASH")
+                                    || line.trim_start().starts_with("*** SKELETON")
+                                {
+                                    *state.hash_progress.lock().unwrap() = Some(0);
+                                } else {
+                                    *state.hash_progress.lock().unwrap() = None;
+                                }
+                            }
+                            // Detect system from INFO phase
+                            if tracker.info {
+                                let mut system = state.system.lock().unwrap();
+                                if *system == Some(System::XBOX) {
+                                    *system = Some(System::XBOX.refine(line));
+                                } else if system.is_none() {
+                                    if let Some(new_system) = System::from_line(line) {
+                                        *system = Some(new_system);
+                                    }
+                                }
                             }
                         }
                     }
@@ -573,7 +687,8 @@ pub fn run_redumper(
                 {
                     let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
                     let profile = *state.disc_profile.lock().unwrap();
-                    postprocess::run(&ctx, &state.log, parent, &stem, drive.as_deref(), profile);
+                    let system = *state.system.lock().unwrap();
+                    postprocess::run(&ctx, &state.log, parent, &stem, drive.as_deref(), profile, system);
                 } else {
                     state.log.lock().unwrap().push_str(&format!("\n[Redumper exited with code {}]\n", code));
                 }

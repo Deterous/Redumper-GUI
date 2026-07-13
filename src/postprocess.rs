@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use eframe::egui;
 
-use crate::dump::DiscProfile;
+use crate::dump::{DiscProfile, System};
 
 const ZSTD_EXTENSIONS: &[&str] = &["state", "skeleton", "subcode"];
 const KEEP_EXTENSIONS: &[&str] = &["bin", "cue", "iso"];
@@ -20,6 +20,7 @@ fn run_mpf(
     image_name: &str,
     drive: Option<&str>,
     profile: Option<DiscProfile>,
+    system: Option<System>,
 ) {
     // Locate MPF.Check (first exe dir, then PATH)
     let name = if cfg!(windows) { "MPF.Check.exe" } else { "MPF.Check" };
@@ -48,21 +49,25 @@ fn run_mpf(
         return;
     };
 
-    // Determine system string from disc profile
-    let system = match profile {
-        Some(DiscProfile::CD) => "AUDIO-CD",
-        Some(DiscProfile::DVD) => "DVD-VIDEO",
-        Some(DiscProfile::BD) => "BD-VIDEO",
-        Some(DiscProfile::HDDVD) => "HDDVD-VIDEO",
-        Some(DiscProfile::XBOX) => "XBOX",
-        Some(DiscProfile::XBOX360) => "XBOX360",
-        Some(DiscProfile::GC) => "GC",
-        Some(DiscProfile::WII) => "WII",
-        None => "PC",
+    // Determine system string or disc profile
+    let system_string = if let Some(dp) = system {
+        dp.as_str()
+    } else {
+        match profile {
+            Some(DiscProfile::CD) => "AUDIO-CD",
+            Some(DiscProfile::DVD) => "DVD-VIDEO",
+            Some(DiscProfile::BD) => "BD-VIDEO",
+            Some(DiscProfile::HDDVD) => "HDDVD-VIDEO",
+            Some(DiscProfile::XBOX) => "XBOX",
+            Some(DiscProfile::XBOX360) => "XBOX360",
+            Some(DiscProfile::GC) => "GC",
+            Some(DiscProfile::WII) => "WII",
+            None => "PC",
+        }
     };
 
     // "MPF.Check SYSTEM -u redumper [-p DRIVE -s] input_file"
-    let mut args = vec![system.to_string(), "-u".to_string(), "redumper".to_string()];
+    let mut args = vec![system_string.to_string(), "-u".to_string(), "redumper".to_string()];
     if let Some(d) = drive {
         args.push("-p".to_string());
         args.push(d.to_string());
@@ -116,9 +121,10 @@ pub fn run(
     image_name: &str,
     drive: Option<&str>,
     profile: Option<DiscProfile>,
+    system: Option<System>,
 ) {
     // Run MPF.Check first (if available)
-    run_mpf(ctx, log, dir, image_name, drive, profile);
+    run_mpf(ctx, log, dir, image_name, drive, profile, system);
 
     // Collect all files in directory that belong to this dump
     let files: Vec<(String, PathBuf)> = fs::read_dir(dir)
