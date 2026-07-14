@@ -1,4 +1,8 @@
+#[cfg(not(target_os = "macos"))]
+use std::path::Path;
 use std::path::PathBuf;
+#[cfg(not(target_os = "macos"))]
+use std::sync::OnceLock;
 
 use super::App;
 use crate::dump::{self, SectorStatus};
@@ -9,6 +13,22 @@ impl App {
     const DVD_LBA_OFFSET: u64 = 0x30000;
     const BD_LBA_OFFSET: u64 = 0x100000;
 
+    // Whether the user running us may create a file in this directory. Probes by creating one,
+    // so that ownership, ACLs and read-only mounts all count; the mode bits alone answer a
+    // different question. Only the creation decides: if the cleanup fails the directory is
+    // still writable.
+    #[cfg(not(target_os = "macos"))]
+    fn dir_is_writable(dir: &Path) -> bool {
+        let probe = dir.join(".redumper-gui-write-test");
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&probe) {
+            Ok(_) => {
+                let _ = std::fs::remove_file(&probe);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
     fn default_output_dir() -> PathBuf {
         #[cfg(target_os = "macos")]
         {
@@ -17,12 +37,18 @@ impl App {
         }
         #[cfg(not(target_os = "macos"))]
         {
-            // Default to Dumps subfolder next to executable
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("Dumps")
+            // Default to a Dumps subfolder next to the executable, which is what a portable build
+            // unpacked by the user gives us. Installed from a package the executable lives in a
+            // system directory instead, where creating that folder fails with EACCES, so fall back
+            // to the user's home. Probed once and remembered: effective_output_dir() runs on every
+            // frame.
+            static DEFAULT: OnceLock<PathBuf> = OnceLock::new();
+            DEFAULT
+                .get_or_init(|| match std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+                    Some(dir) if Self::dir_is_writable(&dir) => dir.join("Dumps"),
+                    _ => dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join("Dumps"),
+                })
+                .clone()
         }
     }
 
