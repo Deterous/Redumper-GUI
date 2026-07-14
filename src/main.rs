@@ -16,12 +16,17 @@ fn load_icon() -> egui::IconData {
     egui::IconData { rgba: img.into_raw(), width: w, height: h }
 }
 
-// Get the path to co-located redumper executable
+// Get the path to the redumper executable (first exe dir, then PATH)
 pub fn find_redumper() -> Option<std::path::PathBuf> {
     let name = if cfg!(windows) { "redumper.exe" } else { "redumper" };
-    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    let path = dir.join(name);
-    path.exists().then_some(path)
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).filter(|p| p.exists()).or_else(|| {
+        std::env::var_os("PATH").and_then(|paths| {
+            std::env::split_paths(&paths).find_map(|dir| {
+                let full = dir.join(name);
+                full.exists().then_some(full)
+            })
+        })
+    })
 }
 
 fn main() -> eframe::Result {
@@ -29,7 +34,9 @@ fn main() -> eframe::Result {
     if find_redumper().is_none() {
         rfd::MessageDialog::new()
             .set_title("Redumper GUI")
-            .set_description("'redumper' executable not found.\n\nPlease place the redumper executable in the same folder as this program.")
+            .set_description(
+                "'redumper' executable not found.\n\nPlease place the redumper executable in the same folder as this program, or on your PATH.",
+            )
             .set_level(rfd::MessageLevel::Error)
             .set_buttons(rfd::MessageButtons::Ok)
             .show();

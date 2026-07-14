@@ -624,9 +624,13 @@ pub fn run_redumper(
     *state.running.lock().unwrap() = true;
 
     thread::spawn(move || {
-        // Prepare the redumper command
-        let dir = std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
-        let name = dir.join(if cfg!(windows) { "redumper.exe" } else { "redumper" });
+        // Prepare the redumper command, from the same place the startup check found it
+        let Some(name) = crate::find_redumper() else {
+            state.log.lock().unwrap().push_str("['redumper' executable not found]\n");
+            *state.running.lock().unwrap() = false;
+            ctx.request_repaint();
+            return;
+        };
 
         // Ensure redumper is executable
         #[cfg(unix)]
