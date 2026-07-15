@@ -642,7 +642,16 @@ pub fn run_redumper(
         }
 
         // Ensure the working directory exists
-        std::fs::create_dir_all(&work_dir).ok();
+        if let Err(e) = std::fs::create_dir_all(&work_dir) {
+            state.log.lock().unwrap().push_str(&format!(
+                "[Failed to create output directory {}: {}]\n",
+                work_dir.display(),
+                e
+            ));
+            *state.running.lock().unwrap() = false;
+            ctx.request_repaint();
+            return;
+        }
 
         let mut cmd = Command::new(name);
         cmd.current_dir(&work_dir).args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
