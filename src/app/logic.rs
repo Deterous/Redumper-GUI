@@ -9,28 +9,11 @@ impl App {
     const DVD_LBA_OFFSET: u64 = 0x30000;
     const BD_LBA_OFFSET: u64 = 0x100000;
 
-    fn default_output_dir() -> PathBuf {
-        #[cfg(target_os = "macos")]
-        {
-            // macOS executable is within .app file, default to Documents/Dumps instead
-            dirs::download_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))).join("Dumps")
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            // Default to Dumps subfolder next to executable
-            std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("Dumps")
-        }
-    }
-
     // The currently defined output directory
     pub(super) fn effective_output_dir(&self) -> PathBuf {
         let base = match &self.output_dir {
             Some(dir) => dir.clone(),
-            None => Self::default_output_dir(),
+            None => dirs::download_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from(".")).join("Dumps"),
         };
         if self.disc_name.is_empty() { base } else { base.join(&self.disc_name) }
     }
