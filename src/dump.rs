@@ -620,6 +620,17 @@ pub fn run_redumper(
     state: DumpState,
     ctx: egui::Context,
 ) {
+    // Ensure the working directory exists
+    if std::fs::create_dir_all(&work_dir).is_err() {
+        rfd::MessageDialog::new()
+            .set_title("Error")
+            .set_description(format!("Failed to create output directory:\n{}", work_dir.display()))
+            .set_level(rfd::MessageLevel::Error)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+        return;
+    }
+
     // Lock UI elements during dump
     *state.running.lock().unwrap() = true;
 
@@ -640,9 +651,6 @@ pub fn run_redumper(
                 }
             }
         }
-
-        // Ensure the working directory exists
-        std::fs::create_dir_all(&work_dir).ok();
 
         let mut cmd = Command::new(name);
         cmd.current_dir(&work_dir).args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
