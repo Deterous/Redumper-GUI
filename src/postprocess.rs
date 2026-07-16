@@ -66,8 +66,15 @@ fn run_mpf(
         }
     };
 
-    // "MPF.Check SYSTEM -u redumper [-p DRIVE -s] input_file"
-    let mut args = vec![system_string.to_string(), "-u".to_string(), "redumper".to_string()];
+    // "MPF.Check SYSTEM -u redumper --no-delete --no-suffix --no-zip [-p DRIVE -s] input_file"
+    let mut args = vec![
+        system_string.to_string(),
+        "-u".to_string(),
+        "redumper".to_string(),
+        "--no-delete".to_string(),
+        "--no-suffix".to_string(),
+        "--no-zip".to_string(),
+    ];
     if let Some(d) = drive {
         args.push("-p".to_string());
         args.push(d.to_string());
