@@ -102,7 +102,9 @@ impl App {
     fn label_image_data(profile: DiscProfile) -> (&'static str, &'static [u8]) {
         match profile {
             DiscProfile::CD => ("CD", include_bytes!("../../assets/profile/CD_disc.png").as_slice()),
-            DiscProfile::DVD | DiscProfile::BD | DiscProfile::HDDVD => ("DVD", include_bytes!("../../assets/profile/DVD_disc.png").as_slice()),
+            DiscProfile::DVD | DiscProfile::BD | DiscProfile::HDDVD => {
+                ("DVD", include_bytes!("../../assets/profile/DVD_disc.png").as_slice())
+            }
             DiscProfile::XBOX => ("XBOX", include_bytes!("../../assets/profile/XBOX_disc.png").as_slice()),
             DiscProfile::XBOX360 => ("XBOX360", include_bytes!("../../assets/profile/XBOX360_disc.png").as_slice()),
             DiscProfile::GC => ("GC", include_bytes!("../../assets/profile/GC_disc.png").as_slice()),
