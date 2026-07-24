@@ -114,9 +114,13 @@ impl App {
 
                         ui.add_space(4.0);
 
-                        // If volume identifier is found, show it next to the selected drive
-                        let volume_label = self.drives.get(self.selected_drive).map(|s| s.1.as_str()).unwrap_or("");
-                        ui.label(egui::RichText::new(volume_label).monospace().color(t.text_dim).size(13.0));
+                        // Warn if no drives are found, otherwise show the current volume label if it exists
+                        if self.drives.is_empty() {
+                            ui.label(egui::RichText::new("No optical drives detected").monospace().color(t.accent_stop).size(13.0));
+                        } else {
+                            let volume_label = self.drives.get(self.selected_drive).map(|s| s.1.as_str()).unwrap_or("");
+                            ui.label(egui::RichText::new(volume_label).monospace().color(t.text_dim).size(13.0));
+                        }
                     });
 
                     ui.add_space(4.0);

@@ -179,7 +179,7 @@ impl eframe::App for App {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         let config = Config {
             output_dir: self.output_dir.clone(),
-            retries: self.retries.clone(),
+            retries: self.retries,
             speed: self.speed,
             auto_eject: self.auto_eject,
             skeleton: self.skeleton,

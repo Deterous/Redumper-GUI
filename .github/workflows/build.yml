@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  REDUMPER_VERSION: b733
+  REDUMPER_VERSION: b734
 
 jobs:
   build:
@@ -175,6 +175,8 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: Redumper GUI v${{ steps.version.outputs.version }}
           body: |
+            Bundled redumper version: ${{ env.REDUMPER_VERSION }}
+
             **[Download for Windows (64bit)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/Redumper-GUI-Windows-x64.zip)**
 
             **[Download for Linux (64bit)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/Redumper-GUI-Linux-x64.tar.gz)**
