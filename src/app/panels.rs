@@ -66,6 +66,14 @@ impl App {
             return;
         }
         let ctx = ui.ctx().clone();
+        let screen = ctx.input(|i| i.viewport_rect());
+        egui::Area::new(egui::Id::new("about_overlay")).fixed_pos(screen.min).order(egui::Order::Middle).show(
+            &ctx,
+            |ui| {
+                ui.painter().rect_filled(screen, 0.0, egui::Color32::from_black_alpha(160));
+                ui.allocate_rect(screen, egui::Sense::click_and_drag());
+            },
+        );
         egui::Window::new(egui::RichText::new("ABOUT").color(t.accent).size(13.0))
             .collapsible(false)
             .resizable(false)
@@ -73,6 +81,7 @@ impl App {
             .default_width(420.0)
             .min_width(420.0)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .order(egui::Order::Foreground)
             .frame(egui::Frame::new().fill(t.bg_panel).stroke(egui::Stroke::new(1.0, t.accent)).inner_margin(12.0))
             .show(&ctx, |ui| {
                 ui.horizontal(|ui| {

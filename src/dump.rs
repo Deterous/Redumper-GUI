@@ -237,6 +237,7 @@ pub struct DumpState {
     pub sectors_read: Arc<Mutex<usize>>,
     pub total_sectors: Arc<Mutex<usize>>,
     pub hash_progress: Arc<Mutex<Option<u8>>>,
+    pub flash_progress: Arc<Mutex<Option<f32>>>,
     pub disc_profile: Arc<Mutex<Option<DiscProfile>>>,
     pub system: Arc<Mutex<Option<System>>>,
     pub script_detected: ScriptDetected,
@@ -252,6 +253,7 @@ impl DumpState {
             sectors_read: Arc::new(Mutex::new(0)),
             total_sectors: Arc::new(Mutex::new(0)),
             hash_progress: Arc::new(Mutex::new(None)),
+            flash_progress: Arc::new(Mutex::new(None)),
             disc_profile: Arc::new(Mutex::new(None)),
             system: Arc::new(Mutex::new(None)),
             script_detected,
@@ -285,6 +287,7 @@ struct ProgressTracker {
     dump: bool,
     refine: bool,
     info: bool,
+    has_wait_phase: bool,
 }
 
 impl ProgressTracker {
@@ -303,6 +306,7 @@ impl ProgressTracker {
             dump: false,
             refine: false,
             info: false,
+            has_wait_phase: false,
         }
     }
 
@@ -450,6 +454,30 @@ fn parse_hash_progress(line: &str) -> Option<u8> {
     line[bracket_start..bracket_end].trim().parse().ok()
 }
 
+// Parse flash write phase: "[  X%] flashing: [XXXXXXXX .. XXXXXXXX)"
+fn parse_flash_write_progress(line: &str, has_wait_phase: bool) -> Option<f32> {
+    let bracket_start = line.find('[')? + 1;
+    let bracket_end = line.find('%')?;
+    let pct: f32 = line[bracket_start..bracket_end].trim().parse().ok()?;
+    // For MT1959, reserve last 10% for the wait phase
+    Some(if has_wait_phase { pct / 100.0 * 0.9 } else { pct / 100.0 })
+}
+
+// Parse flash wait phase "waiting for flash to complete... [Y/32]"
+fn parse_flash_wait_progress(line: &str) -> Option<f32> {
+    let bracket_start = line.find('[')? + 1;
+    let bracket_end = line.find(']')?;
+    let inner = &line[bracket_start..bracket_end];
+    let (current, total) = inner.split_once('/')?;
+    let current: f32 = current.trim().parse().ok()?;
+    let total: f32 = total.trim().parse().ok()?;
+    if total == 0.0 {
+        return None;
+    }
+    // Scale wait phase to last 10%
+    Some(0.9 + (current / total) * 0.1)
+}
+
 // Reads redumper log output, appends to the UI log buffer, and updates the state for the UI's sector map
 fn stream_log(mut log: impl Read, state: &DumpState, ctx: egui::Context) {
     let mut tracker =
@@ -479,6 +507,16 @@ fn stream_log(mut log: impl Read, state: &DumpState, ctx: egui::Context) {
                         } else if let Some(pct) = parse_hash_progress(last) {
                             *state.hash_progress.lock().unwrap() = Some(pct);
                             needs_repaint = true;
+                        } else if last.contains("flashing:") {
+                            if let Some(fp) = parse_flash_write_progress(last, tracker.has_wait_phase) {
+                                *state.flash_progress.lock().unwrap() = Some(fp);
+                                needs_repaint = true;
+                            }
+                        } else if tracker.has_wait_phase && last.contains("waiting for flash") {
+                            if let Some(fp) = parse_flash_wait_progress(last) {
+                                *state.flash_progress.lock().unwrap() = Some(fp);
+                                needs_repaint = true;
+                            }
                         }
                         ProgressTracker::clear_line(&mut l);
                     } else {
@@ -502,6 +540,9 @@ fn stream_log(mut log: impl Read, state: &DumpState, ctx: egui::Context) {
                                 }
                             }
                             // Detect phase changes
+                            if line.trim_start().starts_with("*** FLASH::MT1959") {
+                                tracker.has_wait_phase = true;
+                            }
                             if line.trim_start().starts_with("***") {
                                 if tracker.refine {
                                     tracker.finish_refine_phase();
@@ -530,6 +571,10 @@ fn stream_log(mut log: impl Read, state: &DumpState, ctx: egui::Context) {
                                         *system = Some(new_system);
                                     }
                                 }
+                            }
+                            // Detect flash success
+                            if line.trim() == "flashing success" {
+                                *state.flash_progress.lock().unwrap() = Some(1.0);
                             }
                         }
                     }
