@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  REDUMPER_VERSION: b759
+  REDUMPER_VERSION: b765
 
 jobs:
   build:
