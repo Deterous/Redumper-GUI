@@ -68,6 +68,8 @@ impl App {
                     .stroke(egui::Stroke::new(1.0, t.border)),
             )
             .show(ui, |ui| {
+                let (btn_h, btn_font, btn_pad) = (22.0, 13.0, 6.0); // Button height, font size, and padding
+
                 // Disable drive/path toolbar when dump is running
                 ui.add_enabled_ui(!is_running, |ui| {
                     // First row
@@ -121,6 +123,26 @@ impl App {
                             let volume_label = self.drives.get(self.selected_drive).map(|s| s.1.as_str()).unwrap_or("");
                             ui.label(egui::RichText::new(volume_label).monospace().color(t.text_dim).size(13.0));
                         }
+
+                        // Drive flasher button
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let flasher_label = "DRIVE FLASHER";
+                            let size = Self::beveled_button_size(flasher_label, btn_h, btn_font, btn_pad);
+                            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                            if response.clicked() {
+                                self.show_flasher = !self.show_flasher;
+                            }
+                            let fill = ui.visuals().widgets.inactive.bg_fill;
+                            Self::paint_beveled_button(
+                                ui,
+                                rect,
+                                self.show_flasher || self.action_pending || response.is_pointer_button_down_on(),
+                                flasher_label,
+                                fill,
+                                btn_font,
+                                t.highlight,
+                            );
+                        });
                     });
 
                     ui.add_space(4.0);
@@ -200,7 +222,6 @@ impl App {
                 ui.horizontal(|ui| {
                     let can_start =
                         !is_running && !self.drives.is_empty() && !self.dump_exists && !self.disc_name.is_empty();
-                    let (btn_h, btn_font, btn_pad) = (22.0, 13.0, 6.0); // Button height, font size, and padding
 
                     ui.add_space(4.0);
 

@@ -1,4 +1,5 @@
 mod display;
+mod flasher;
 mod fonts;
 mod logic;
 mod panels;
@@ -63,6 +64,12 @@ pub struct App {
     pub(super) rings: bool,                 // --rings
     pub(super) cleanup: bool,               // Post-process cleanup
 
+    // Flasher state
+    pub(super) show_flasher: bool,
+    pub(super) flasher_drive: usize,
+    pub(super) flasher_firmware: String,
+    pub(super) flasher_command: usize,
+
     // Dump state
     pub(super) dump: DumpState,
     pub(super) dump_exists: bool, // Current disc name refers to an existing dump (partial or complete)
@@ -125,6 +132,12 @@ impl App {
             skeleton: config.skeleton,
             rings: config.rings,
             cleanup: config.cleanup,
+
+            // Flasher state
+            show_flasher: false,
+            flasher_drive: 0,
+            flasher_firmware: String::new(),
+            flasher_command: 0,
 
             // Dump state
             dump,
@@ -367,5 +380,6 @@ impl eframe::App for App {
         self.paint_about(ui, &t); // About link / popup
         self.paint_log_panel(ui, &t); // Bottom log panel
         self.paint_display(ui, &t, is_running); // Central display panel
+        self.paint_flasher_modal(ui, &t, is_running); // Drive flasher modal (on top)
     }
 }
