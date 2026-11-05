@@ -81,11 +81,16 @@ impl App {
                             .width(80.0)
                             .selected_text(egui::RichText::new(drive_text).monospace().size(13.0).color(t.highlight))
                             .show_ui(ui, |ui| {
-                                for (i, (d, _)) in self.drives.iter().enumerate() {
+                                for (i, (d, description)) in self.drives.iter().enumerate() {
+                                    let label = if cfg!(target_os = "linux") && !description.is_empty() {
+                                        format!("{d} — {description}")
+                                    } else {
+                                        d.clone()
+                                    };
                                     ui.selectable_value(
                                         &mut self.selected_drive,
                                         i,
-                                        egui::RichText::new(d.as_str()).monospace().size(13.0).color(t.highlight),
+                                        egui::RichText::new(label).monospace().size(13.0).color(t.highlight),
                                     );
                                 }
                             });
