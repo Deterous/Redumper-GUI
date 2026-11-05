@@ -172,7 +172,7 @@ pub fn detect_drives() -> Vec<(String, String)> {
                             if let Some(sg_entry) = sg_entries.flatten().next() {
                                 if sg_entry.path().is_dir() {
                                     let dev_path = format!("/dev/{}", sg_entry.file_name().to_string_lossy());
-                                    drives.push((dev_path, String::new()));
+                                    drives.push((dev_path, linux_drive_description(&path)));
                                     continue;
                                 }
                             }
@@ -242,5 +242,70 @@ pub fn detect_drives() -> Vec<(String, String)> {
         // Sort drives and return list
         drives.sort_by(|a, b| a.0.cmp(&b.0));
         drives
+    }
+}
+
+// sysfs attributes are optional: a disappearing drive or restricted sandbox must
+// not prevent enumeration, and missing metadata leaves the plain device path.
+#[cfg(target_os = "linux")]
+fn linux_drive_description(device: &std::path::Path) -> String {
+    ["vendor", "model"]
+        .iter()
+        .filter_map(|attribute| std::fs::read_to_string(device.join(attribute)).ok())
+        .flat_map(|value| value.split_whitespace().map(str::to_owned).collect::<Vec<_>>())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use std::{fs, path::PathBuf};
+
+    struct DeviceFixture(PathBuf);
+
+    impl DeviceFixture {
+        fn new() -> Self {
+            static NEXT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!("redumper-gui-drives-{}-{id}", std::process::id()));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for DeviceFixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn reads_and_normalizes_vendor_and_model() {
+        let device = DeviceFixture::new();
+        fs::write(device.0.join("vendor"), "PLEXTOR \n").unwrap();
+        fs::write(device.0.join("model"), "CD-R   PX-W4012A\n").unwrap();
+        assert_eq!(linux_drive_description(&device.0), "PLEXTOR CD-R PX-W4012A");
+    }
+
+    #[test]
+    fn uses_available_metadata() {
+        let device = DeviceFixture::new();
+        fs::write(device.0.join("model"), "DVD-ROM SH-D163B\n").unwrap();
+        assert_eq!(linux_drive_description(&device.0), "DVD-ROM SH-D163B");
+        fs::remove_file(device.0.join("model")).unwrap();
+        fs::write(device.0.join("vendor"), "TSSTcorp\n").unwrap();
+        assert_eq!(linux_drive_description(&device.0), "TSSTcorp");
+    }
+
+    #[test]
+    fn missing_blank_or_unreadable_metadata_is_optional() {
+        let device = DeviceFixture::new();
+        assert_eq!(linux_drive_description(&device.0), "");
+        fs::write(device.0.join("vendor"), " \t\n").unwrap();
+        // A directory at an attribute path simulates a read failure even as root.
+        fs::create_dir(device.0.join("model")).unwrap();
+        assert_eq!(linux_drive_description(&device.0), "");
+        assert_eq!(linux_drive_description(&device.0.join("disconnected")), "");
     }
 }
