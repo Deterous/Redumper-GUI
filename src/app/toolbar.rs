@@ -121,7 +121,16 @@ impl App {
                             ui.label(egui::RichText::new("No optical drives detected").monospace().color(t.accent_stop).size(13.0));
                         } else {
                             let volume_label = self.drives.get(self.selected_drive).map(|s| s.1.as_str()).unwrap_or("");
-                            ui.label(egui::RichText::new(volume_label).monospace().color(t.text_dim).size(13.0));
+                            let response = ui.add(
+                                egui::Label::new(egui::RichText::new(volume_label).monospace().color(t.text_dim).size(13.0))
+                                    .sense(egui::Sense::click()),
+                            );
+                            if response.hovered() {
+                                ui.ctx().secart_cursor_icon(egui::CursorIcon::PointingHand);
+                            }
+                            if response.clicked() && self.disc_name.is_empty() {
+                                self.disc_name = volume_label.to_owned();
+                            }
                         }
 
                         // Drive flasher button
