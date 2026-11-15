@@ -126,7 +126,7 @@ impl App {
                                     .sense(egui::Sense::click()),
                             );
                             if response.hovered() {
-                                ui.ctx().secart_cursor_icon(egui::CursorIcon::PointingHand);
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                             }
                             if response.clicked() && self.disc_name.is_empty() {
                                 self.disc_name = volume_label.to_owned();
